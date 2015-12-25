@@ -1,0 +1,8 @@
+.vs/
+
+*.swp
+*.sdf
+*.opensdf
+*.log
+*.tlog
+*.cache
