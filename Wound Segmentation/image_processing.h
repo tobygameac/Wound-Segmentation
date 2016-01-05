@@ -396,6 +396,39 @@ namespace WoundSegmentation {
       return result_image;
     }
 
+    System::Drawing::Bitmap ^RemoveVerticalLines(System::Drawing::Bitmap ^source_image, size_t max_line_width) {
+      if (!source_image) {
+        return nullptr;
+      }
+
+      std::vector<std::vector<RGBA<unsigned char> > > source_image_pixel_values;
+      BitmapToVectorOfPixels(source_image, source_image_pixel_values);
+
+      std::vector<std::vector<RGBA<unsigned char> > > result_image_pixel_values = source_image_pixel_values;
+
+      for (size_t row = 0; row < source_image->Height; ++row) {
+        size_t current_line_width = 0;
+        for (size_t column = 0; column < source_image->Width; ++column) {
+          if (source_image_pixel_values[row][column].r_) { // White
+            if (current_line_width < max_line_width) {
+              for (size_t back_index = 1; back_index <= current_line_width; ++back_index) {
+                result_image_pixel_values[row][column - back_index] = RGBA<unsigned char>(255, 255, 255);
+              }
+            }
+            current_line_width = 0;
+          } else {
+            ++current_line_width;
+          }
+        }
+      }
+
+      System::Drawing::Bitmap ^result_image = gcnew System::Drawing::Bitmap(source_image);
+
+      VectorOfPixelsToBitmap(result_image_pixel_values, result_image);
+
+      return result_image;
+    }
+
     System::Drawing::Bitmap ^MinFilter(System::Drawing::Bitmap ^source_image) {
       return MinFilter(source_image, 3);
     }
@@ -737,7 +770,10 @@ namespace WoundSegmentation {
         result_image = MaxFilter(result_image, 15);
       }
 
-      result_image = RemoveIsolatedRegion(result_image);
+      for (size_t t = 0; t < 1; ++t) {
+        result_image = RemoveVerticalLines(result_image, 20);
+        result_image = RemoveIsolatedRegion(result_image);
+      }
 
       for (size_t t = 0; t < 0; ++t) {
         result_image = MinFilter(result_image, 15);
