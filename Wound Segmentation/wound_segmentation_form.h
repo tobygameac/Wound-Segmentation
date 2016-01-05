@@ -1,5 +1,12 @@
 #pragma once
 
+#include "image_processing.h"
+
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+
 namespace WoundSegmentation {
 
   const size_t PICTURE_BOX_LOCATION_GAP = 50;
@@ -25,6 +32,11 @@ namespace WoundSegmentation {
       open_file_tool_strip_menu_item_->Click += gcnew System::EventHandler(this, &WoundSegmentation::WoundSegmentationForm::OnButtonsClick);
       save_file_tool_strip_menu_item_->Click += gcnew System::EventHandler(this, &WoundSegmentation::WoundSegmentationForm::OnButtonsClick);
 
+      button_segmentation_->Click += gcnew System::EventHandler(this, &WoundSegmentation::WoundSegmentationForm::OnButtonsClick);
+      button_confidence_->Click += gcnew System::EventHandler(this, &WoundSegmentation::WoundSegmentationForm::OnButtonsClick);
+      button_significance_->Click += gcnew System::EventHandler(this, &WoundSegmentation::WoundSegmentationForm::OnButtonsClick);
+
+      RunAllData();
     }
 
   protected:
@@ -39,6 +51,71 @@ namespace WoundSegmentation {
 
   private:
 
+    void RunAllData() {
+
+      std::ofstream dc_output_stream;
+      
+      dc_output_stream.open("../data/dc.txt");
+
+      double total_dc = 0;
+      size_t ground_truth_count = 0;
+
+      for (size_t picture_id = 1; picture_id <= 7; ++picture_id) {
+        std::ostringstream input_picture_name_oss;
+        input_picture_name_oss << "../data/S" << std::setw(2) << std::setfill('0') << picture_id << ".jpg";
+        
+        std::cout << "Start : " << input_picture_name_oss.str() << "\n";
+
+        System::String ^input_file_path = gcnew System::String(input_picture_name_oss.str().c_str());
+        source_bitmap_ = gcnew Bitmap(input_file_path);
+
+        picture_box_source_->Image = source_bitmap_;
+        picture_box_result_->Image = source_bitmap_;
+
+        picture_box_result_->Location = System::Drawing::Point(picture_box_source_->Location.X + source_bitmap_->Width + PICTURE_BOX_LOCATION_GAP, picture_box_source_->Location.Y);
+
+        label_original_image_->Location = System::Drawing::Point(picture_box_source_->Location.X + source_bitmap_->Width * 0.5, label_original_image_->Location.Y);
+
+        label_result_image_->Location = System::Drawing::Point(picture_box_result_->Location.X + source_bitmap_->Width * 0.5, label_original_image_->Location.Y);
+
+        Bitmap ^result_bitmap = ImageProcessing::SignificanceMap(source_bitmap_);
+        picture_box_result_->Image = result_bitmap;
+
+        std::ostringstream output_picture_name_oss;
+        output_picture_name_oss << "../data/result_S" << std::setw(2) << std::setfill('0') << picture_id << ".jpg";
+
+        System::String ^output_file_path = gcnew System::String(output_picture_name_oss.str().c_str());
+
+        picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Bmp);
+
+        std::cout << "File saved : " << output_picture_name_oss.str() << "\n";
+
+        std::ostringstream ground_truth_picture_name_oss;
+        ground_truth_picture_name_oss << "../data/S" << std::setw(2) << std::setfill('0') << picture_id << "_GT.jpg";
+
+        if (std::ifstream(ground_truth_picture_name_oss.str()).good()) {
+          System::String ^ground_truth_file_path = gcnew System::String(ground_truth_picture_name_oss.str().c_str());
+          Bitmap ^ground_truth_bitmap = gcnew Bitmap(ground_truth_file_path);
+          
+          double dc = ImageProcessing::DiceCoefficient(ground_truth_bitmap, result_bitmap);
+
+          std::cout << "dc : " << dc << " " << input_picture_name_oss.str() << "\n";
+          dc_output_stream << "dc : " << dc << " " << input_picture_name_oss.str() << "\n";
+
+          total_dc += dc;
+          ++ground_truth_count;
+        }
+      }
+
+      if (ground_truth_count) {
+        dc_output_stream << "average dc : " << total_dc / (double)ground_truth_count << "\n";
+      }
+
+      dc_output_stream.close();
+
+      exit(0);
+    }
+
     void OnButtonsClick(System::Object ^sender, System::EventArgs ^e) {
       if (sender == open_file_tool_strip_menu_item_) {
         OpenFileDialog ^open_image_file_dialog = gcnew OpenFileDialog();
@@ -46,16 +123,16 @@ namespace WoundSegmentation {
         open_image_file_dialog->Title = "Open an image file.";
 
         if (open_image_file_dialog->ShowDialog() == System::Windows::Forms::DialogResult::OK) {
-          source_image_ = gcnew Bitmap(open_image_file_dialog->FileName);
+          source_bitmap_ = gcnew Bitmap(open_image_file_dialog->FileName);
 
-          picture_box_source_->Image = source_image_;
-          picture_box_result_->Image = source_image_;
+          picture_box_source_->Image = source_bitmap_;
+          picture_box_result_->Image = source_bitmap_;
 
-          picture_box_result_->Location = System::Drawing::Point(picture_box_source_->Location.X + source_image_->Width + PICTURE_BOX_LOCATION_GAP, picture_box_source_->Location.Y);
+          picture_box_result_->Location = System::Drawing::Point(picture_box_source_->Location.X + source_bitmap_->Width + PICTURE_BOX_LOCATION_GAP, picture_box_source_->Location.Y);
 
-          label_original_image_->Location = System::Drawing::Point(picture_box_source_->Location.X + source_image_->Width * 0.5, label_original_image_->Location.Y);
+          label_original_image_->Location = System::Drawing::Point(picture_box_source_->Location.X + source_bitmap_->Width * 0.5, label_original_image_->Location.Y);
 
-          label_result_image_->Location = System::Drawing::Point(picture_box_result_->Location.X + source_image_->Width * 0.5, label_original_image_->Location.Y);
+          label_result_image_->Location = System::Drawing::Point(picture_box_result_->Location.X + source_bitmap_->Width * 0.5, label_original_image_->Location.Y);
         }
 
       } else if (sender == save_file_tool_strip_menu_item_) {
@@ -70,6 +147,12 @@ namespace WoundSegmentation {
             picture_box_result_->Image->Save(save_bmp_file_dialog->FileName, System::Drawing::Imaging::ImageFormat::Bmp);
           }
         }
+      } else if (sender == button_segmentation_) {        
+        picture_box_result_->Image = ImageProcessing::Segmentation(source_bitmap_);
+      } else if (sender == button_confidence_) {
+        picture_box_result_->Image = ImageProcessing::ConfidenceMap(source_bitmap_);
+      } else if (sender == button_significance_) {
+        picture_box_result_->Image = ImageProcessing::SignificanceMap(source_bitmap_);
       }
     }
 
@@ -78,7 +161,7 @@ namespace WoundSegmentation {
     /// </summary>
     System::ComponentModel::Container ^components;
 
-    System::Drawing::Bitmap ^source_image_;
+    System::Drawing::Bitmap ^source_bitmap_;
 
     System::Windows::Forms::PictureBox ^picture_box_source_;
     System::Windows::Forms::PictureBox ^picture_box_result_;
@@ -90,6 +173,13 @@ namespace WoundSegmentation {
 
     System::Windows::Forms::Label ^label_original_image_;
     System::Windows::Forms::Label ^label_result_image_;
+
+    System::Windows::Forms::Button ^button_segmentation_;
+    System::Windows::Forms::Button ^button_confidence_;
+    System::Windows::Forms::Button ^button_significance_;
+
+    System::Windows::Forms::Panel ^panel_picture_box_;
+
 
 #pragma region Windows Form Designer generated code
     /// <summary>
@@ -104,23 +194,31 @@ namespace WoundSegmentation {
       this->open_file_tool_strip_menu_item_ = (gcnew System::Windows::Forms::ToolStripMenuItem());
       this->save_file_tool_strip_menu_item_ = (gcnew System::Windows::Forms::ToolStripMenuItem());
       this->label_original_image_ = (gcnew System::Windows::Forms::Label());
+      this->button_segmentation_ = (gcnew System::Windows::Forms::Button());
+      this->button_confidence_ = (gcnew System::Windows::Forms::Button());
+      this->button_significance_ = (gcnew System::Windows::Forms::Button());
+      this->panel_picture_box_ = (gcnew System::Windows::Forms::Panel());
       this->label_result_image_ = (gcnew System::Windows::Forms::Label());
+      (cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->picture_box_source_))->BeginInit();
+      (cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->picture_box_result_))->BeginInit();
+      this->menu_strip->SuspendLayout();
+      this->panel_picture_box_->SuspendLayout();
       this->SuspendLayout();
       // 
       // picture_box_source_
       // 
-      this->picture_box_source_->Location = System::Drawing::Point(150, 100);
+      this->picture_box_source_->Location = System::Drawing::Point(0, 0);
       this->picture_box_source_->Name = L"picture_box_source_";
-      this->picture_box_source_->Size = System::Drawing::Size(600, 600);
+      this->picture_box_source_->Size = System::Drawing::Size(60, 60);
       this->picture_box_source_->SizeMode = System::Windows::Forms::PictureBoxSizeMode::AutoSize;
       this->picture_box_source_->TabIndex = 0;
       this->picture_box_source_->TabStop = false;
       // 
       // picture_box_result_
       // 
-      this->picture_box_result_->Location = System::Drawing::Point(800, 100);
+      this->picture_box_result_->Location = System::Drawing::Point(60, 0);
       this->picture_box_result_->Name = L"picture_box_result_";
-      this->picture_box_result_->Size = System::Drawing::Size(600, 600);
+      this->picture_box_result_->Size = System::Drawing::Size(60, 60);
       this->picture_box_result_->SizeMode = System::Windows::Forms::PictureBoxSizeMode::AutoSize;
       this->picture_box_result_->TabIndex = 1;
       this->picture_box_result_->TabStop = false;
@@ -132,7 +230,7 @@ namespace WoundSegmentation {
       });
       this->menu_strip->Location = System::Drawing::Point(0, 0);
       this->menu_strip->Name = L"menu_strip";
-      this->menu_strip->Size = System::Drawing::Size(1400, 24);
+      this->menu_strip->Size = System::Drawing::Size(1584, 24);
       this->menu_strip->TabIndex = 2;
       this->menu_strip->Text = L"Menu strip";
       // 
@@ -161,16 +259,55 @@ namespace WoundSegmentation {
       // label_original_image_
       // 
       this->label_original_image_->AutoSize = true;
-      this->label_original_image_->Location = System::Drawing::Point(400, 75);
+      this->label_original_image_->Location = System::Drawing::Point(120, 30);
       this->label_original_image_->Name = L"label_original_image_";
       this->label_original_image_->Size = System::Drawing::Size(74, 13);
       this->label_original_image_->TabIndex = 3;
       this->label_original_image_->Text = L"Original Image";
       // 
+      // button_segmentation_
+      // 
+      this->button_segmentation_->Location = System::Drawing::Point(10, 100);
+      this->button_segmentation_->Name = L"button_segmentation_";
+      this->button_segmentation_->Size = System::Drawing::Size(125, 25);
+      this->button_segmentation_->TabIndex = 5;
+      this->button_segmentation_->Text = L"Segmentation";
+      this->button_segmentation_->UseVisualStyleBackColor = true;
+      // 
+      // button_confidence_
+      // 
+      this->button_confidence_->Location = System::Drawing::Point(10, 150);
+      this->button_confidence_->Name = L"button_confidence_";
+      this->button_confidence_->Size = System::Drawing::Size(125, 25);
+      this->button_confidence_->TabIndex = 6;
+      this->button_confidence_->Text = L"Confidence";
+      this->button_confidence_->UseVisualStyleBackColor = true;
+      // 
+      // button_significance_
+      // 
+      this->button_significance_->Location = System::Drawing::Point(10, 200);
+      this->button_significance_->Name = L"button_significance_";
+      this->button_significance_->Size = System::Drawing::Size(125, 25);
+      this->button_significance_->TabIndex = 7;
+      this->button_significance_->Text = L"Significance";
+      this->button_significance_->UseVisualStyleBackColor = true;
+      // 
+      // panel_picture_box_
+      // 
+      this->panel_picture_box_->AutoScroll = true;
+      this->panel_picture_box_->Controls->Add(this->label_original_image_);
+      this->panel_picture_box_->Controls->Add(this->label_result_image_);
+      this->panel_picture_box_->Controls->Add(this->picture_box_result_);
+      this->panel_picture_box_->Controls->Add(this->picture_box_source_);
+      this->panel_picture_box_->Location = System::Drawing::Point(150, 24);
+      this->panel_picture_box_->Name = L"panel_picture_box_";
+      this->panel_picture_box_->Size = System::Drawing::Size(1366, 768);
+      this->panel_picture_box_->TabIndex = 8;
+      // 
       // label_result_image_
       // 
       this->label_result_image_->AutoSize = true;
-      this->label_result_image_->Location = System::Drawing::Point(1000, 75);
+      this->label_result_image_->Location = System::Drawing::Point(620, 30);
       this->label_result_image_->Name = L"label_result_image_";
       this->label_result_image_->Size = System::Drawing::Size(69, 13);
       this->label_result_image_->TabIndex = 4;
@@ -181,11 +318,11 @@ namespace WoundSegmentation {
       this->AutoScaleDimensions = System::Drawing::SizeF(6, 13);
       this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
       this->AutoScroll = true;
-      this->ClientSize = System::Drawing::Size(1024, 768);
-      this->Controls->Add(this->label_result_image_);
-      this->Controls->Add(this->label_original_image_);
-      this->Controls->Add(this->picture_box_result_);
-      this->Controls->Add(this->picture_box_source_);
+      this->ClientSize = System::Drawing::Size(1584, 862);
+      this->Controls->Add(this->panel_picture_box_);
+      this->Controls->Add(this->button_confidence_);
+      this->Controls->Add(this->button_segmentation_);
+      this->Controls->Add(this->button_significance_);
       this->Controls->Add(this->menu_strip);
       this->MainMenuStrip = this->menu_strip;
       this->Name = L"WoundSegmentationForm";
@@ -194,6 +331,8 @@ namespace WoundSegmentation {
       (cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->picture_box_result_))->EndInit();
       this->menu_strip->ResumeLayout(false);
       this->menu_strip->PerformLayout();
+      this->panel_picture_box_->ResumeLayout(false);
+      this->panel_picture_box_->PerformLayout();
       this->ResumeLayout(false);
       this->PerformLayout();
 
