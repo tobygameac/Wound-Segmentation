@@ -9,6 +9,7 @@
 #include "graph.h"
 #include "disjoint_set.h"
 #include "rgba.h"
+#include "omp.h"
 
 namespace WoundSegmentation {
 
@@ -166,8 +167,10 @@ namespace WoundSegmentation {
           ++filter_size;
         }
 
-        for (size_t row = 0; row < source_pixel_values_.size(); ++row) {
-          for (size_t column = 0; column < source_pixel_values_[row].size(); ++column) {
+#pragma omp parallel for
+        for (int row = 0; row < source_pixel_values_.size(); ++row) {
+#pragma omp parallel for
+          for (int column = 0; column < source_pixel_values_[row].size(); ++column) {
             size_t total_pixel_count = 0;
             RGBA<size_t> rgb_sum(0, 0, 0);
             for (int delta_r = -filter_size / 2; delta_r <= filter_size / 2; ++delta_r) {
@@ -204,8 +207,10 @@ namespace WoundSegmentation {
           ++filter_size;
         }
 
-        for (size_t row = 0; row < source_pixel_values_.size(); ++row) {
-          for (size_t column = 0; column < source_pixel_values_[row].size(); ++column) {
+#pragma omp parallel for
+        for (int row = 0; row < source_pixel_values_.size(); ++row) {
+#pragma omp parallel for
+          for (int column = 0; column < source_pixel_values_[row].size(); ++column) {
             RGBA<unsigned char> max_rgb(0, 0, 0);
             for (int delta_r = -filter_size / 2; delta_r <= filter_size / 2; ++delta_r) {
               for (int delta_c = -filter_size / 2; delta_c <= filter_size / 2; ++delta_c) {
@@ -238,8 +243,10 @@ namespace WoundSegmentation {
           ++filter_size;
         }
 
-        for (size_t row = 0; row < source_pixel_values_.size(); ++row) {
-          for (size_t column = 0; column < source_pixel_values_[row].size(); ++column) {
+#pragma omp parallel for
+        for (int row = 0; row < source_pixel_values_.size(); ++row) {
+#pragma omp parallel for
+          for (int column = 0; column < source_pixel_values_[row].size(); ++column) {
             RGBA<unsigned char> min_rgb(255, 255, 255);
             for (int delta_r = -filter_size / 2; delta_r <= filter_size / 2; ++delta_r) {
               for (int delta_c = -filter_size / 2; delta_c <= filter_size / 2; ++delta_c) {
@@ -262,12 +269,13 @@ namespace WoundSegmentation {
         MinFilter(3);
       }
 
-      void RemoveVerticalLines(size_t max_line_width) {
+      void RemoveVerticalLines(const size_t max_line_width) {
         if (!image_loaded_) {
           return;
         }
 
-        for (size_t row = 0; row < source_pixel_values_.size(); ++row) {
+#pragma omp parallel for
+        for (int row = 0; row < source_pixel_values_.size(); ++row) {
           size_t current_line_width = 0;
           for (size_t column = 0; column < source_pixel_values_[row].size(); ++column) {
             if (source_pixel_values_[row][column].r_) { // White
@@ -284,6 +292,75 @@ namespace WoundSegmentation {
         }
       }
 
+      void RemoveHorizontalLines(const size_t max_line_height) {
+        if (!image_loaded_) {
+          return;
+        }
+
+#pragma omp parallel for
+        for (int column = 0; column < source_pixel_values_[0].size(); ++column) {
+          for (size_t row = 0; row < source_pixel_values_.size(); ++row) {
+            size_t current_line_height = 0;
+            if (source_pixel_values_[row][column].r_) { // White
+              if (current_line_height < max_line_height) {
+                for (size_t back_index = 1; back_index <= current_line_height; ++back_index) {
+                  result_pixel_values_[row - back_index][column] = RGBA<unsigned char>(255, 255, 255);
+                }
+              }
+              current_line_height = 0;
+            } else {
+              ++current_line_height;
+            }
+          }
+        }
+      }
+
+      void FillVerticalGaps(const size_t max_gap_width) {
+        if (!image_loaded_) {
+          return;
+        }
+
+#pragma omp parallel for
+        for (int row = 0; row < source_pixel_values_.size(); ++row) {
+          size_t current_gap_width = 0;
+          for (size_t column = 0; column < source_pixel_values_[row].size(); ++column) {
+            if (!source_pixel_values_[row][column].r_) { // Black
+              if (current_gap_width < max_gap_width) {
+                for (size_t back_index = 1; back_index <= current_gap_width; ++back_index) {
+                  result_pixel_values_[row][column - back_index] = RGBA<unsigned char>(0, 0, 0);
+                }
+              }
+              current_gap_width = 0;
+            } else {
+              ++current_gap_width;
+            }
+          }
+        }
+      }
+
+      void FillHorizontalGaps(const size_t max_gap_height) {
+        if (!image_loaded_) {
+          return;
+        }
+
+#pragma omp parallel for
+        for (int column = 0; column < source_pixel_values_[0].size(); ++column) {
+          for (size_t row = 0; row < source_pixel_values_.size(); ++row) {
+            size_t current_gap_height = 0;
+            if (!source_pixel_values_[row][column].r_) { // Black
+              if (current_gap_height < max_gap_height) {
+                for (size_t back_index = 1; back_index <= current_gap_height; ++back_index) {
+                  result_pixel_values_[row - back_index][column] = RGBA<unsigned char>(0, 0, 0);
+                }
+              }
+              current_gap_height = 0;
+            } else {
+              ++current_gap_height;
+            }
+          }
+        }
+      }
+
       void Segmentation(Graph<std::pair<size_t, size_t> > &target_graph, std::vector<std::vector<size_t> > &group_of_pixel, const double k, const int min_patch_size, const double similar_color_patch_merge_threshold) {
 
         if (!image_loaded_) {
@@ -292,7 +369,7 @@ namespace WoundSegmentation {
 
         BuildGraphFromImage(source_pixel_values_, target_graph);
 
-        sort(target_graph.edges_.begin(), target_graph.edges_.end());
+        std::sort(target_graph.edges_.begin(), target_graph.edges_.end());
 
         DisjointSet vertex_disjoint_set(target_graph.vertices_.size());
 
@@ -328,8 +405,10 @@ namespace WoundSegmentation {
 
         // Calculate the color of each group
         std::vector<RGBA<double> > group_color(target_graph.vertices_.size());
-        for (size_t r = 0; r < source_pixel_values_.size(); ++r) {
-          for (size_t c = 0; c < source_pixel_values_[r].size(); ++c) {
+#pragma omp parallel for
+        for (int r = 0; r < source_pixel_values_.size(); ++r) {
+#pragma omp parallel for
+          for (int c = 0; c < source_pixel_values_[r].size(); ++c) {
             size_t index = r * source_pixel_values_[r].size() + c;
             size_t group = vertex_disjoint_set.FindGroup(index);
             size_t group_size = vertex_disjoint_set.SizeOfGroup(group);
@@ -366,8 +445,10 @@ namespace WoundSegmentation {
           color = RGBA<double>();
         }
 
-        for (size_t r = 0; r < source_pixel_values_.size(); ++r) {
-          for (size_t c = 0; c < source_pixel_values_[r].size(); ++c) {
+#pragma omp parallel for
+        for (int r = 0; r < source_pixel_values_.size(); ++r) {
+#pragma omp parallel for
+          for (int c = 0; c < source_pixel_values_[r].size(); ++c) {
             size_t index = r * source_pixel_values_[r].size() + c;
             size_t group = vertex_disjoint_set.FindGroup(index);
             size_t group_size = vertex_disjoint_set.SizeOfGroup(group);
@@ -382,8 +463,10 @@ namespace WoundSegmentation {
         // Write the pixel value
         group_of_pixel = std::vector<std::vector<size_t> >(source_pixel_values_.size(), std::vector<size_t>(source_pixel_values_[0].size()));
 
-        for (size_t r = 0; r < source_pixel_values_.size(); ++r) {
-          for (size_t c = 0; c < source_pixel_values_[r].size(); ++c) {
+#pragma omp parallel for
+        for (int r = 0; r < source_pixel_values_.size(); ++r) {
+#pragma omp parallel for
+          for (int c = 0; c < source_pixel_values_[r].size(); ++c) {
             size_t index = r * source_pixel_values_[r].size() + c;
             size_t group = vertex_disjoint_set.FindGroup(index);
             group_of_pixel[r][c] = group;
@@ -425,8 +508,10 @@ namespace WoundSegmentation {
         const double POSITION_WEIGHT = 0.1;
         const double SIMILIAR_WEIGHT = 0.0;
 
-        for (size_t r = 0; r < source_pixel_values_.size(); ++r) {
-          for (size_t c = 0; c < source_pixel_values_[r].size(); ++c) {
+#pragma omp parallel for
+        for (int r = 0; r < source_pixel_values_.size(); ++r) {
+#pragma omp parallel for
+          for (int c = 0; c < source_pixel_values_[r].size(); ++c) {
             double distance_with_red = 0;
             distance_with_red += pow(0.4 - (source_pixel_values_[r][c].r_ / 255.0), 2.0);
             distance_with_red += pow(1.0 - (source_pixel_values_[r][c].g_ / 255.0), 2.0);
@@ -534,8 +619,10 @@ namespace WoundSegmentation {
           group_iterator->second = (group_iterator->second - min_significance) / (max_significance - min_significance);
         }
 
-        for (size_t r = 0; r < source_pixel_values_.size(); ++r) {
-          for (size_t c = 0; c < source_pixel_values_[r].size(); ++c) {
+#pragma omp parallel for
+        for (int r = 0; r < source_pixel_values_.size(); ++r) {
+#pragma omp parallel for
+          for (int c = 0; c < source_pixel_values_[r].size(); ++c) {
             size_t pixel_group = group_of_pixel[r][c];
 
             double group_significance = significance_of_group[pixel_group];
@@ -563,8 +650,10 @@ namespace WoundSegmentation {
         std::vector<std::vector<double> > significance_map;
         SignificanceMap(significance_map);
 
-        for (size_t r = 0; r < source_pixel_values_.size(); ++r) {
-          for (size_t c = 0; c < source_pixel_values_[r].size(); ++c) {
+#pragma omp parallel for
+        for (int r = 0; r < source_pixel_values_.size(); ++r) {
+#pragma omp parallel for
+          for (int c = 0; c < source_pixel_values_[r].size(); ++c) {
             double pixel_significance = significance_map[r][c];
 
             RGBA<unsigned char> thresholding_color = (pixel_significance >= 0.8) ? RGBA<unsigned char>(0, 0, 0) : RGBA<unsigned char>(255, 255, 255);
@@ -572,25 +661,35 @@ namespace WoundSegmentation {
           }
         }
 
-        for (size_t t = 0; t < 0; ++t) {
+        source_pixel_values_ = result_pixel_values_;
+
+        for (size_t t = 0; t < 5; ++t) {
+          MaxFilter(3);
           source_pixel_values_ = result_pixel_values_;
-          MaxFilter(15);
+        }
+
+        for (size_t t = 0; t < 5; ++t) {
+          MinFilter(3);
           source_pixel_values_ = result_pixel_values_;
         }
 
         for (size_t t = 0; t < 1; ++t) {
-          source_pixel_values_ = result_pixel_values_;
-          RemoveVerticalLines(20);
-          source_pixel_values_ = result_pixel_values_;
           RemoveIsolatedRegion();
+          source_pixel_values_ = result_pixel_values_;
+          RemoveVerticalLines(40);
+          source_pixel_values_ = result_pixel_values_;
+          RemoveHorizontalLines(40);
           source_pixel_values_ = result_pixel_values_;
         }
 
-        for (size_t t = 0; t < 0; ++t) {
+        for (size_t t = 0; t < 1; ++t) {
+          FillHorizontalGaps(40);
           source_pixel_values_ = result_pixel_values_;
-          MinFilter(15);
+          FillVerticalGaps(40);
           source_pixel_values_ = result_pixel_values_;
         }
+
+        RemoveIsolatedRegion();
 
         source_pixel_values_ = original_pixel_values_;
       }
