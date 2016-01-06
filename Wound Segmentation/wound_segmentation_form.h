@@ -101,6 +101,16 @@ namespace WoundSegmentation {
 
           total_dc += dc;
           ++ground_truth_count;
+
+          //std::ostringstream evaluation_picture_name_oss;
+          //evaluation_picture_name_oss << "../data/evaluation_S" << std::setw(2) << std::setfill('0') << picture_id << ".jpg";
+
+          //output_file_path = gcnew System::String(evaluation_picture_name_oss.str().c_str());
+          //image_processer.WoundSegmentationWithOutlineOverlapping();
+          //result_bitmap = image_processer.GetResultBitmapFromPixelValues();
+          //picture_box_result_->Image = result_bitmap;
+          //picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Bmp);
+          //std::cout << "File saved : " << evaluation_picture_name_oss.str() << "\n";
         }
       }
 
@@ -166,6 +176,8 @@ namespace WoundSegmentation {
 
         if (open_image_file_dialog->ShowDialog() == System::Windows::Forms::DialogResult::OK) {
           image_processer.SetGroundTruthPixelValuesFromBitmap(gcnew Bitmap(open_image_file_dialog->FileName));
+          image_processer.WoundSegmentationWithOutlineOverlapping();
+          picture_box_result_->Image = image_processer.GetResultBitmapFromPixelValues();
 
           std::cout << image_processer.DiceCoefficient() << "\n";
         }

@@ -20,15 +20,15 @@ namespace WoundSegmentation {
       RGBA(T r, T g, T b, T a) : RGBA(r, g, b), a_(a) {
       }
 
-      RGBA<T> Square() {
+      RGBA<T> Square() const {
         return RGBA<T>(r_ * r_, g_ * g_, b_ * b_, a_);
       }
 
-      RGBA<T> Sqrt() {
+      RGBA<T> Sqrt() const {
         return RGBA<T>(sqrt(r_), sqrt(g_), sqrt(b_), a_);
       }
 
-      T Magnitude() {
+      T Magnitude() const {
         return sqrt(r_ * r_ + g_ * g_ + b_ * b_);
       }
 
@@ -41,7 +41,7 @@ namespace WoundSegmentation {
         return *this;
       }
 
-      bool operator ==(const RGBA<T> &other) {
+      bool operator ==(const RGBA<T> &other) const {
         if (r_ != other.r_) {
           return false;
         }
