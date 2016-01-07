@@ -89,7 +89,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <OpenMPSupport>false</OpenMPSupport>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -111,7 +111,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <OpenMPSupport>false</OpenMPSupport>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -140,8 +140,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="disjoint_set.h" />
+    <ClInclude Include="image.h" />
     <ClInclude Include="image_processing.h" />
     <ClInclude Include="graph.h" />
+    <ClInclude Include="rgba.h" />
     <ClInclude Include="wound_segmentation_form.h">
       <FileType>CppForm</FileType>
     </ClInclude>
