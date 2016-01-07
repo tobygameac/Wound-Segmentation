@@ -29,7 +29,11 @@ namespace WoundSegmentation {
       }
 
       T Magnitude() const {
-        return sqrt(r_ * r_ + g_ * g_ + b_ * b_);
+        return r_ * r_ + g_ * g_ + b_ * b_;
+      }
+
+      T NormalizedMagnitude() const {
+        return sqrt((r_ * r_ + g_ * g_ + b_ * b_) / 3.0);
       }
 
       const RGBA<T> &operator =(const RGBA<T> &other) {
