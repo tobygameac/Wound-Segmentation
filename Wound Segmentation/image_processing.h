@@ -76,6 +76,8 @@ namespace WoundSegmentation {
               edge_difference.b_ = (double)pixel_values[r][c].b_ - (double)pixel_values[neighbor_r][neighbor_c].b_;
 
               double edge_weight = edge_difference.NormalizedMagnitude();
+              //double edge_weight = (std::abs(edge_difference.r_) + std::abs(edge_difference.g_) + std::abs(edge_difference.b_)) / 3.0;
+              //double edge_weight = sqrt(edge_difference.r_ * edge_difference.r_ + edge_difference.g_ * edge_difference.g_ + edge_difference.b_ * edge_difference.b_);
 
               target_graph.edges_.push_back(Edge(e, edge_weight));
             }
@@ -98,12 +100,81 @@ namespace WoundSegmentation {
       }
     }
 
+    void RGBToHSV(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values) {
+#pragma omp parallel for
+      for (int row = 0; row < source_pixel_values.size(); ++row) {
+#pragma omp parallel for
+        for (int column = 0; column < source_pixel_values[row].size(); ++column) {
+          RGBA<double> rgb_value(source_pixel_values[row][column].r_, source_pixel_values[row][column].g_, source_pixel_values[row][column].b_);
+          double min_color = std::min(std::min(rgb_value.r_, rgb_value.g_), rgb_value.b_);
+          double max_color = std::max(std::max(rgb_value.r_, rgb_value.g_), rgb_value.b_);
+          double difference = max_color - min_color;
+
+          double l = (max_color + min_color) / 2.0;
+
+          double h = 0;
+          double s = 0;
+          double v = max_color;
+
+          if (rgb_value.r_ >= max_color) {
+            h = 60 * (rgb_value.g_ - rgb_value.b_) / difference + (rgb_value.g_ < rgb_value.b_) * 360;
+          } else if (rgb_value.g_ >= max_color) {
+            h = 60 * (rgb_value.b_ - rgb_value.r_) / difference + 120;
+          } else {
+            h = 60 * (rgb_value.b_ - rgb_value.r_) / difference + 240;
+          }
+
+          if (max_color >= 1e-9) {
+            s = difference / max_color;
+          } else {
+            h = 360.0;
+          }
+
+          result_pixel_values[row][column] = RGBA<unsigned char>((h / 360.0) * 255, s * 255, v);
+        }
+      }
+    }
+
     void Thresholding(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values, const float threshold) {
       for (size_t row = 0; row < source_pixel_values.size(); ++row) {
         for (size_t column = 0; column < source_pixel_values[row].size(); ++column) {
           RGBA<unsigned char> rgb_value = source_pixel_values[row][column];
           float gray_level = (rgb_value.r_ + rgb_value.g_ + rgb_value.b_) / 3.0;
           result_pixel_values[row][column] = (gray_level >= threshold) ? RGBA<unsigned char>(255, 255, 255) : RGBA<unsigned char>(0, 0, 0);
+        }
+      }
+    }
+
+    void HistogramEqualization(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values) {
+      size_t pixel_value_count[256] = {};
+
+      for (size_t row = 0; row < source_pixel_values.size(); ++row) {
+        for (size_t column = 0; column < source_pixel_values[row].size(); ++column) {
+          RGBA<unsigned char> rgb_value = source_pixel_values[row][column];
+          unsigned char gray_value = (rgb_value.r_ + rgb_value.g_ + rgb_value.b_) / 3.0;
+          ++pixel_value_count[gray_value];
+        }
+      }
+
+      size_t total_pixel_count = source_pixel_values.size() * source_pixel_values[0].size();
+
+      unsigned char new_gray_value[256];
+      float cdf = 0;
+
+      for (size_t gray_level = 0; gray_level < 256; ++gray_level) {
+        cdf += pixel_value_count[gray_level] / (float)total_pixel_count;
+        new_gray_value[gray_level] = cdf * 255;
+      }
+
+
+#pragma omp parallel for
+      for (int row = 0; row < source_pixel_values.size(); ++row) {
+#pragma omp parallel for
+        for (int column = 0; column < source_pixel_values[row].size(); ++column) {
+          RGBA<unsigned char> rgb_value = source_pixel_values[row][column];
+          unsigned char gray_value = (rgb_value.r_ + rgb_value.g_ + rgb_value.b_) / 3.0;
+          RGBA<unsigned char> new_rgb_value(new_gray_value[gray_value], new_gray_value[gray_value], new_gray_value[gray_value]);
+          result_pixel_values[row][column] = new_rgb_value;
         }
       }
     }
@@ -219,11 +290,19 @@ namespace WoundSegmentation {
       }
 
       std::vector<std::vector<double> > filter(filter_size, std::vector<double>(filter_size, 1 / (2 * acos(-1) * sigma * sigma)));
+      double filter_sum = 0;
       for (int r = 0; r < filter_size; ++r) {
         for (int c = 0; c < filter_size; ++c) {
-          int x = (filter_size / 2) - c;
-          int y = (filter_size / 2) - r;
+          int x = (filter_size / 2) - r;
+          int y = (filter_size / 2) - c;
           filter[r][c] *= exp(-(x * x + y * y) / (2.0 * sigma * sigma));
+          filter_sum += filter[r][c];
+        }
+      }
+
+      for (int r = 0; r < filter_size; ++r) {
+        for (int c = 0; c < filter_size; ++c) {
+          filter[r][c] /= filter_sum;
         }
       }
 
@@ -250,8 +329,12 @@ namespace WoundSegmentation {
       }
     }
 
+    void GaussianFilter(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values, int filter_size) {
+      GaussianFilter(source_pixel_values, result_pixel_values, filter_size, 0.84089642);
+    }
+
     void GaussianFilter(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values) {
-      GaussianFilter(source_pixel_values, result_pixel_values, 3, 0.84089642);
+      GaussianFilter(source_pixel_values, result_pixel_values, 3);
     }
 
     void MeanFilter(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values, int filter_size) {
@@ -414,8 +497,8 @@ namespace WoundSegmentation {
     void RemoveHorizontalLines(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values, const size_t max_line_height) {
 #pragma omp parallel for
       for (int column = 0; column < source_pixel_values[0].size(); ++column) {
+        size_t current_line_height = 0;
         for (size_t row = 0; row < source_pixel_values.size(); ++row) {
-          size_t current_line_height = 0;
           if (source_pixel_values[row][column].r_) { // White
             if (current_line_height < max_line_height) {
               for (size_t back_index = 1; back_index <= current_line_height; ++back_index) {
@@ -452,8 +535,8 @@ namespace WoundSegmentation {
     void FillHorizontalGaps(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values, const size_t max_gap_height) {
 #pragma omp parallel for
       for (int column = 0; column < source_pixel_values[0].size(); ++column) {
+        size_t current_gap_height = 0;
         for (size_t row = 0; row < source_pixel_values.size(); ++row) {
-          size_t current_gap_height = 0;
           if (!source_pixel_values[row][column].r_) { // Black
             if (current_gap_height < max_gap_height) {
               for (size_t back_index = 1; back_index <= current_gap_height; ++back_index) {
@@ -525,9 +608,9 @@ namespace WoundSegmentation {
 
       std::vector<std::vector<RGBA<unsigned char> > > intermediate_pixel_values = source_pixel_values;
 
-      //GaussianFilter(source_pixel_values, intermediate_pixel_values);
+      GaussianFilter(source_pixel_values, intermediate_pixel_values);
       //MedianFilter(source_pixel_values, intermediate_pixel_values);
-      MeanFilter(source_pixel_values, intermediate_pixel_values);
+      //MeanFilter(source_pixel_values, intermediate_pixel_values, 3);
 
       BuildGraphFromImage(intermediate_pixel_values, target_graph);
 
@@ -535,7 +618,7 @@ namespace WoundSegmentation {
 
       DisjointSet vertex_disjoint_set(target_graph.vertices_.size());
 
-      std::vector<double> thresholds(target_graph.vertices_.size(), 1 / k);
+      std::vector<double> thresholds(target_graph.vertices_.size(), 1.0 / k);
 
       // Segmentation
       for (const auto &edge : target_graph.edges_) {
@@ -564,9 +647,7 @@ namespace WoundSegmentation {
 
       // Calculate the color of each group
       std::vector<RGBA<double> > group_color(target_graph.vertices_.size());
-#pragma omp parallel for
       for (int r = 0; r < intermediate_pixel_values.size(); ++r) {
-#pragma omp parallel for
         for (int c = 0; c < intermediate_pixel_values[r].size(); ++c) {
           size_t index = r * intermediate_pixel_values[r].size() + c;
           size_t group = vertex_disjoint_set.FindGroup(index);
@@ -586,15 +667,14 @@ namespace WoundSegmentation {
         if (group_of_x == group_of_y) {
           continue;
         }
-        RGBA<double> difference;
+        RGBA<double> color_difference;
 
-        difference.r_ = group_color[group_of_x].r_ - group_color[group_of_y].r_;
-        difference.g_ = group_color[group_of_x].g_ - group_color[group_of_y].g_;
-        difference.b_ = group_color[group_of_x].b_ - group_color[group_of_y].b_;
+        color_difference.r_ = group_color[group_of_x].r_ - group_color[group_of_y].r_;
+        color_difference.g_ = group_color[group_of_x].g_ - group_color[group_of_y].g_;
+        color_difference.b_ = group_color[group_of_x].b_ - group_color[group_of_y].b_;
 
-        double color_difference = difference.NormalizedMagnitude();
-
-        if (color_difference < similar_color_patch_merge_threshold) {
+        //if (sqrt(color_difference.r_ * color_difference.r_ + color_difference.g_ * color_difference.g_ + color_difference.b_ * color_difference.b_) < similar_color_patch_merge_threshold) {
+        if (color_difference.NormalizedMagnitude() < similar_color_patch_merge_threshold) {
           vertex_disjoint_set.UnionGroup(group_of_x, group_of_y);
         }
       }
@@ -604,9 +684,7 @@ namespace WoundSegmentation {
         color = RGBA<double>();
       }
 
-#pragma omp parallel for
       for (int r = 0; r < intermediate_pixel_values.size(); ++r) {
-#pragma omp parallel for
         for (int c = 0; c < intermediate_pixel_values[r].size(); ++c) {
           size_t index = r * intermediate_pixel_values[r].size() + c;
           size_t group = vertex_disjoint_set.FindGroup(index);
@@ -656,6 +734,9 @@ namespace WoundSegmentation {
     void ConfidenceMap(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values, std::vector<std::vector<double> > &confidence_map, const RGBA<unsigned char> &target_color) {
       confidence_map = std::vector<std::vector<double> >(source_pixel_values.size(), std::vector<double>(source_pixel_values[0].size()));
 
+      std::vector<std::vector<RGBA<unsigned char> > > intermediate_pixel_values = source_pixel_values;
+      //GaussianFilter(source_pixel_values, intermediate_pixel_values, 3, 0.8);
+
       const double TARGET_COLOR_WEIGHT = 1.0;
       const double POSITION_WEIGHT = 0.0;
       const double SIMILIAR_WEIGHT = 0.0;
@@ -668,9 +749,9 @@ namespace WoundSegmentation {
 
           RGBA<double> difference_with_target_color;
 
-          difference_with_target_color.r_ = target_color.r_ - (double)source_pixel_values[r][c].r_;
-          difference_with_target_color.g_ = target_color.g_ - (double)source_pixel_values[r][c].g_;
-          difference_with_target_color.b_ = target_color.b_ - (double)source_pixel_values[r][c].b_;
+          difference_with_target_color.r_ = (double)target_color.r_ - (double)intermediate_pixel_values[r][c].r_;
+          difference_with_target_color.g_ = (double)target_color.g_ - (double)intermediate_pixel_values[r][c].g_;
+          difference_with_target_color.b_ = (double)target_color.b_ - (double)intermediate_pixel_values[r][c].b_;
 
           distance_with_target_color = 1.0 - (difference_with_target_color.NormalizedMagnitude() / 255.0);
 
@@ -719,11 +800,7 @@ namespace WoundSegmentation {
 
           confidence_map[r][c] = confidence_value;
 
-          unsigned char confidence_gray_level = confidence_map[r][c] * 255;
-
-          result_pixel_values[r][c].r_ = confidence_gray_level;
-          result_pixel_values[r][c].g_ = confidence_gray_level;
-          result_pixel_values[r][c].b_ = confidence_gray_level;
+          result_pixel_values[r][c] = SignificanceValueToSignifanceColor(confidence_map[r][c]);
         }
       }
     }
@@ -795,7 +872,7 @@ namespace WoundSegmentation {
 
     void WoundSegmentation(const std::vector<std::vector<RGBA<unsigned char> > > &source_pixel_values, std::vector<std::vector<RGBA<unsigned char> > > &result_pixel_values) {
       std::vector<std::vector<double> > significance_map;
-      SignificanceMap(source_pixel_values, result_pixel_values, significance_map, RGBA<unsigned char>(80, 0, 0));
+      SignificanceMap(source_pixel_values, result_pixel_values, significance_map, RGBA<unsigned char>(0, 0, 0));
 
 #pragma omp parallel for
       for (int r = 0; r < source_pixel_values.size(); ++r) {
@@ -812,12 +889,12 @@ namespace WoundSegmentation {
       // Post processing
 
       for (size_t t = 0; t < 0; ++t) {
-        MaxFilter(intermediate_pixel_values, result_pixel_values, 3);
+        MaxFilter(intermediate_pixel_values, result_pixel_values, 5);
         intermediate_pixel_values = result_pixel_values;
       }
 
       for (size_t t = 0; t < 0; ++t) {
-        MinFilter(intermediate_pixel_values, result_pixel_values, 3);
+        MinFilter(intermediate_pixel_values, result_pixel_values, 5);
         intermediate_pixel_values = result_pixel_values;
       }
 
@@ -849,8 +926,8 @@ namespace WoundSegmentation {
 
       RGBA<double> average_wound_color(0, 0, 0);
       size_t wound_pixel_count = 0;
-      for (int r = 0; r < result_pixel_values.size(); ++r) {
-        for (int c = 0; c < result_pixel_values[r].size(); ++c) {
+      for (size_t r = 0; r < result_pixel_values.size(); ++r) {
+        for (size_t c = 0; c < result_pixel_values[r].size(); ++c) {
           if (!result_pixel_values[r][c].r_) {
             average_wound_color.r_ += source_pixel_values[r][c].r_;
             average_wound_color.g_ += source_pixel_values[r][c].g_;
@@ -865,8 +942,9 @@ namespace WoundSegmentation {
         average_wound_color.g_ /= (double)wound_pixel_count;
         average_wound_color.b_ /= (double)wound_pixel_count;
       }
-      
+
       //std::cout << average_wound_color.r_ << " " << average_wound_color.g_ << " " << average_wound_color.b_ << "\n";
+
       // Again
 //      SignificanceMap(source_pixel_values, result_pixel_values, significance_map, RGBA<unsigned char>(average_wound_color.r_, average_wound_color.g_, average_wound_color.b_));
 //
@@ -958,14 +1036,14 @@ namespace WoundSegmentation {
         if (!image_loaded_) {
           return;
         }
-        ImageProcessing::ConfidenceMap(source_pixel_values_, result_pixel_values_, RGBA<unsigned char>(127, 0, 0));
+        ImageProcessing::ConfidenceMap(source_pixel_values_, result_pixel_values_, RGBA<unsigned char>(0, 0, 0));
       }
 
       void SignificanceMap() {
         if (!image_loaded_) {
           return;
         }
-        ImageProcessing::SignificanceMap(source_pixel_values_, result_pixel_values_, RGBA<unsigned char>(127, 0, 0));
+        ImageProcessing::SignificanceMap(source_pixel_values_, result_pixel_values_, RGBA<unsigned char>(0, 0, 0));
       }
 
       void WoundSegmentation() {
@@ -975,8 +1053,10 @@ namespace WoundSegmentation {
         ImageProcessing::WoundSegmentation(source_pixel_values_, result_pixel_values_);
       }
 
-      void WoundSegmentationWithOutlineOverlapping() {
+      double WoundSegmentationWithOutlineOverlapping() {
         WoundSegmentation();
+
+        double dc_value = DiceCoefficient();
 
         std::vector<std::vector<RGBA<unsigned char> > > intermediate_pixel_values = source_pixel_values_;
 
@@ -996,7 +1076,7 @@ namespace WoundSegmentation {
         }
 
         if (!ground_truth_image_loaded_) {
-          return;
+          return 0;
         }
 
         std::vector<std::vector<RGBA<unsigned char> > > ground_truth_outline_pixel_values = source_pixel_values_;
@@ -1011,6 +1091,8 @@ namespace WoundSegmentation {
             }
           }
         }
+
+        return dc_value;
       }
 
       double DiceCoefficient() {

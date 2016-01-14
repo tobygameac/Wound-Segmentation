@@ -74,17 +74,37 @@ namespace WoundSegmentation {
         Bitmap ^source_bitmap = gcnew Bitmap(input_file_path);
         image_processer.SetPixelValuesFromBitmap(source_bitmap);
 
-        image_processer.WoundSegmentation();
-
+        std::ostringstream segmentation_picture_name_oss;
+        segmentation_picture_name_oss << "../data/segmentation_S" << std::setw(2) << std::setfill('0') << picture_id << ".jpg";
+        System::String ^output_file_path = gcnew System::String(segmentation_picture_name_oss.str().c_str());
+        image_processer.Segmentation();
         Bitmap ^result_bitmap = image_processer.GetResultBitmapFromPixelValues();
         picture_box_result_->Image = result_bitmap;
+        picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Jpeg);
+
+        std::ostringstream confidence_picture_name_oss;
+        confidence_picture_name_oss << "../data/confidence_S" << std::setw(2) << std::setfill('0') << picture_id << ".jpg";
+        output_file_path = gcnew System::String(confidence_picture_name_oss.str().c_str());
+        image_processer.ConfidenceMap();
+        result_bitmap = image_processer.GetResultBitmapFromPixelValues();
+        picture_box_result_->Image = result_bitmap;
+        picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Jpeg);
+
+        std::ostringstream significance_picture_name_oss;
+        significance_picture_name_oss << "../data/significance_S" << std::setw(2) << std::setfill('0') << picture_id << ".jpg";
+        output_file_path = gcnew System::String(significance_picture_name_oss.str().c_str());
+        image_processer.SignificanceMap();
+        result_bitmap = image_processer.GetResultBitmapFromPixelValues();
+        picture_box_result_->Image = result_bitmap;
+        picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Jpeg);
 
         std::ostringstream output_picture_name_oss;
         output_picture_name_oss << "../data/result_S" << std::setw(2) << std::setfill('0') << picture_id << ".jpg";
-
-        System::String ^output_file_path = gcnew System::String(output_picture_name_oss.str().c_str());
-
-        picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Bmp);
+        output_file_path = gcnew System::String(output_picture_name_oss.str().c_str());
+        image_processer.WoundSegmentation();
+        result_bitmap = image_processer.GetResultBitmapFromPixelValues();
+        picture_box_result_->Image = result_bitmap;
+        picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Jpeg);
 
         std::cout << "File saved : " << output_picture_name_oss.str() << "\n";
 
@@ -109,7 +129,7 @@ namespace WoundSegmentation {
           image_processer.WoundSegmentationWithOutlineOverlapping();
           result_bitmap = image_processer.GetResultBitmapFromPixelValues();
           picture_box_result_->Image = result_bitmap;
-          picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Bmp);
+          picture_box_result_->Image->Save(output_file_path, System::Drawing::Imaging::ImageFormat::Jpeg);
           std::cout << "File saved : " << evaluation_picture_name_oss.str() << "\n";
         }
       }
@@ -176,10 +196,10 @@ namespace WoundSegmentation {
 
         if (open_image_file_dialog->ShowDialog() == System::Windows::Forms::DialogResult::OK) {
           image_processer.SetGroundTruthPixelValuesFromBitmap(gcnew Bitmap(open_image_file_dialog->FileName));
-          image_processer.WoundSegmentationWithOutlineOverlapping();
+          double dc_value = image_processer.WoundSegmentationWithOutlineOverlapping();
+          std::cout << "DC : " << dc_value << "\n";
+          label_dc_value_->Text = "DC : " + dc_value + "\n";
           picture_box_result_->Image = image_processer.GetResultBitmapFromPixelValues();
-
-          std::cout << image_processer.DiceCoefficient() << "\n";
         }
       }
     }
@@ -205,6 +225,7 @@ namespace WoundSegmentation {
     System::Windows::Forms::Button ^button_significance_;
     System::Windows::Forms::Button ^button_wound_segmentation_;
     System::Windows::Forms::Button ^button_evaluation_;
+    System::Windows::Forms::Label ^label_dc_value_;
 
     System::Windows::Forms::Panel ^panel_picture_box_;
 
@@ -228,6 +249,7 @@ namespace WoundSegmentation {
       this->label_result_image_ = (gcnew System::Windows::Forms::Label());
       this->button_wound_segmentation_ = (gcnew System::Windows::Forms::Button());
       this->button_evaluation_ = (gcnew System::Windows::Forms::Button());
+      this->label_dc_value_ = (gcnew System::Windows::Forms::Label());
       (cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->picture_box_source_))->BeginInit();
       (cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->picture_box_result_))->BeginInit();
       this->menu_strip->SuspendLayout();
@@ -360,12 +382,22 @@ namespace WoundSegmentation {
       this->button_evaluation_->Text = L"Evaluation";
       this->button_evaluation_->UseVisualStyleBackColor = true;
       // 
+      // label_dc_value_
+      // 
+      this->label_dc_value_->AutoSize = true;
+      this->label_dc_value_->Location = System::Drawing::Point(12, 342);
+      this->label_dc_value_->Name = L"label_dc_value_";
+      this->label_dc_value_->Size = System::Drawing::Size(28, 13);
+      this->label_dc_value_->TabIndex = 5;
+      this->label_dc_value_->Text = L"DC :";
+      // 
       // WoundSegmentationForm
       // 
       this->AutoScaleDimensions = System::Drawing::SizeF(6, 13);
       this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
       this->AutoScroll = true;
       this->ClientSize = System::Drawing::Size(1584, 862);
+      this->Controls->Add(this->label_dc_value_);
       this->Controls->Add(this->button_evaluation_);
       this->Controls->Add(this->button_wound_segmentation_);
       this->Controls->Add(this->panel_picture_box_);
