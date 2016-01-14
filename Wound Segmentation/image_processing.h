@@ -293,8 +293,8 @@ namespace WoundSegmentation {
       double filter_sum = 0;
       for (int r = 0; r < filter_size; ++r) {
         for (int c = 0; c < filter_size; ++c) {
-          int x = (filter_size / 2) - r;
-          int y = (filter_size / 2) - c;
+          int x = c - (filter_size / 2);
+          int y = r - (filter_size / 2);
           filter[r][c] *= exp(-(x * x + y * y) / (2.0 * sigma * sigma));
           filter_sum += filter[r][c];
         }
